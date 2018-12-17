@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[11]:
+# In[1]:
 
 
 import os
@@ -45,7 +45,7 @@ if not os.path.exists(COCO_MODEL_PATH):
 
 # ## Настройки
 
-# In[12]:
+# In[2]:
 
 
 class RocksConfig(Config):
@@ -75,30 +75,45 @@ config = RocksConfig()
 
 # ## Датасет
 
-# In[13]:
+# In[21]:
 
 
+#Этот класс загружает изображения и маски датасета
+#Для использования переопределяются load_image,
+#load_mask, image_reference
 class RocksDataset(utils.Dataset):
-
-    def load_images(self, startId, count):
+    
+    #перечисляет изображения в images/ и сохраняет информацию о них
+    def load_images(self, start_id, count):
         # Add classes
         self.add_class("rocks", 1, "rock")
-        lastId = startId + count;
+        
+        last_id = start_id + count - 1;
+        
+        model_id = 0
         for file in os.listdir(IMAGES_DIR):
             match = re.match("^(\d+)\.png$", file)
             if match:
                 image_id = int(match.group(1))
-                if image_id >= startId <= lastId:
-                    self.add_image("rocks", image_id=int(match.group(1)), 
+                if image_id >= start_id and image_id <= last_id:
+                    self.add_image("rocks", image_id=model_id,
+                                   real_image_id=int(match.group(1)), 
                                    path=f"{IMAGES_DIR}/{file}")
+                    print(f"Add image {image_id} with id {model_id}")
+                    model_id += 1
 
+    #загружает изображение в виде массива numpy
     def load_image(self, image_id):
         print(f"Asked to find image at {image_id}")
         path = self.image_reference(image_id)["path"]
         return self.load_png_as_nparray(path)
     
+    #загружает маску в виде кортежа. первый элемент - массив boolean
+    #формы width/height/masks_num, второй - массив с номерами классов каждой маски
+    #размера masks_num
     def load_mask(self, index):
         print(f"Asked to find mask at {index}")
+        index = self.image_reference(index)["real_image_id"]
         mask = self.get_mask(index)
         if mask:
             return mask;
@@ -118,11 +133,9 @@ class RocksDataset(utils.Dataset):
         self.save_mask(index, mask)
         return mask
     
-    def fix_mask(self, index):
-        mask = self.load_mask(index)
-        mask = (mask[0], np.repeat(1, mask[0].shape[2]))
-        self.save_mask(index, mask)
-    
+    #кэш масок. загружает маску из памяти, или с диска
+    #если не нашли - собираем заново из изображений
+    #в images/
     def get_mask(self, index):
         try:
             try:
@@ -137,7 +150,8 @@ class RocksDataset(utils.Dataset):
             return mask
         except:
             return None
-        
+    
+    #сериализует маску на диск, чтоб не собирать при новом прогоне
     def save_mask(self, index, mask):
         serialized = pickle.dumps(mask)
         open(f"{MODEL_DIR}/{index}.mask", "wb").write(serialized)
@@ -146,6 +160,7 @@ class RocksDataset(utils.Dataset):
         except AttributeError:
             self._masks = {};
 
+    #возвращает информацию об изображении
     def image_reference(self, image_id):
         #print(f"Asked for an image reference at {image_id}")
         """Return the shapes data of the image."""
@@ -178,51 +193,18 @@ class RocksDataset(utils.Dataset):
         return np.array([to_bool(pixel) for pixel in img])
 
 
-# In[14]:
+# In[31]:
 
 
+#набор для обучения
 dataset_train = RocksDataset()
-dataset_train.load_images(0, 15)
+dataset_train.load_images(0, 60)
 dataset_train.prepare()
 
+#набор для оценки
 dataset_val = RocksDataset()
-dataset_val.load_images(0, 1)
+dataset_val.load_images(60, 3)
 dataset_val.prepare()
-
-
-# In[10]:
-
-
-# image = dataset_train.load_image(16)
-# image, window, scale, padding, crop = utils.resize_image(
-#        image,
-#        min_dim=config.IMAGE_MIN_DIM,
-#        min_scale=config.IMAGE_MIN_SCALE,
-#        max_dim=config.IMAGE_MAX_DIM,
-# #        mode=config.IMAGE_RESIZE_MODE)
-# for i in range(0, 16):
-#     mask, class_ids = dataset_train.load_mask(i)
-#     print(i, mask.shape, class_ids.shape)
-#     dataset_train.fix_mask(i)
-#     print(mask)
-# #     img = dataset_train.load_image(i)
-#     mask = dataset_train.load_mask(i)
-#     print(img.shape)
-#     print(mask[0].shape, mask[1].shape)
-
-# image = dataset_train.load_image(8)
-# mask, class_ids = dataset_train.load_mask(8)
-
-# (image.shape, mask.shape, class_ids.shape)
-# class_ids
-# _idx = np.sum(mask, axis=(0, 1)) > 0
-# mask = mask[:, :, _idx]
-# class_ids = class_ids[_idx]
-# (mask.shape, class_ids.shape)
-# dataset_train.source_class_ids
-    
-# # mask = utils.resize_mask(mask, scale, padding, crop)
-# type(mask[1][0])
 
 
 # ## Создание модели
@@ -264,10 +246,7 @@ elif init_with == "last":
 # In[ ]:
 
 
-# Train the head branches
-# Passing layers="heads" freezes all layers except the head
-# layers. You can also pass a regular expression to select
-# which layers to train by name pattern.
+# Обучаем головные ветки
 model.train(dataset_train, dataset_val, 
             learning_rate=config.LEARNING_RATE, 
             epochs=1, 
@@ -277,24 +256,11 @@ model.train(dataset_train, dataset_val,
 # In[ ]:
 
 
-# Fine tune all layers
-# Passing layers="all" trains all layers. You can also 
-# pass a regular expression to select which layers to
-# train by name pattern.
+# Тонкая настройка всех слоёв
 model.train(dataset_train, dataset_val, 
             learning_rate=config.LEARNING_RATE / 10,
             epochs=2, 
             layers="all")
-
-
-# In[ ]:
-
-
-# Save weights
-# Typically not needed because callbacks save after every epoch
-# Uncomment to save manually
-# model_path = os.path.join(MODEL_DIR, "mask_rcnn_shapes.h5")
-# model.keras_model.save_weights(model_path)
 
 
 # ## Обнаружение
@@ -308,17 +274,15 @@ class InferenceConfig(ShapesConfig):
 
 inference_config = InferenceConfig()
 
-# Recreate the model in inference mode
+# Пересоздаём модель в режиме обнаружения
 model = modellib.MaskRCNN(mode="inference", 
                           config=inference_config,
                           model_dir=MODEL_DIR)
 
-# Get path to saved weights
-# Either set a specific path or find last trained weights
-# model_path = os.path.join(ROOT_DIR, ".h5 file name here")
+# Путь до сохранённых весов
 model_path = model.find_last()
 
-# Load trained weights
+# Загружаем обученные веса
 print("Loading weights from ", model_path)
 model.load_weights(model_path, by_name=True)
 
@@ -326,7 +290,7 @@ model.load_weights(model_path, by_name=True)
 # In[ ]:
 
 
-# Test on a random image
+# Тестируем на случайном изображении
 image_id = random.choice(dataset_val.image_ids)
 original_image, image_meta, gt_class_id, gt_bbox, gt_mask =    modellib.load_image_gt(dataset_val, inference_config, 
                            image_id, use_mini_mask=False)
@@ -356,19 +320,18 @@ visualize.display_instances(original_image, r['rois'], r['masks'], r['class_ids'
 # In[ ]:
 
 
-# Compute VOC-Style mAP @ IoU=0.5
-# Running on 10 images. Increase for better accuracy.
+# Вычисляем VOC-Style mAP @ IoU=0.5
+# Тестируем на 10 изображениях
 image_ids = np.random.choice(dataset_val.image_ids, 10)
 APs = []
 for image_id in image_ids:
-    # Load image and ground truth data
     image, image_meta, gt_class_id, gt_bbox, gt_mask =        modellib.load_image_gt(dataset_val, inference_config,
                                image_id, use_mini_mask=False)
     molded_images = np.expand_dims(modellib.mold_image(image, inference_config), 0)
-    # Run object detection
+    # Обнаружение объекта
     results = model.detect([image], verbose=0)
     r = results[0]
-    # Compute AP
+    # Вычисляем AP
     AP, precisions, recalls, overlaps =        utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
                          r["rois"], r["class_ids"], r["scores"], r['masks'])
     APs.append(AP)
