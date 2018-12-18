@@ -88,7 +88,7 @@ class RocksDataset(utils.Dataset):
         # Add classes
         self.add_class("rocks", 1, "rock")
         
-        last_id = start_id + count - 1;
+        last_id = start_id + count - 1
         
         model_id = 0
         for file in os.listdir(IMAGES_DIR):
@@ -268,7 +268,7 @@ model.train(dataset_train, dataset_val,
 # In[ ]:
 
 
-class InferenceConfig(ShapesConfig):
+class InferenceConfig(RocksConfig):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
 
@@ -321,8 +321,8 @@ visualize.display_instances(original_image, r['rois'], r['masks'], r['class_ids'
 
 
 # Вычисляем VOC-Style mAP @ IoU=0.5
-# Тестируем на 10 изображениях
-image_ids = np.random.choice(dataset_val.image_ids, 10)
+# Тестируем на 3 изображениях
+image_ids = np.random.choice(dataset_val.image_ids, 3)
 APs = []
 for image_id in image_ids:
     image, image_meta, gt_class_id, gt_bbox, gt_mask =        modellib.load_image_gt(dataset_val, inference_config,
