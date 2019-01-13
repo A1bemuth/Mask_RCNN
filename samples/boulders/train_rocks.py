@@ -168,10 +168,10 @@ class RocksDataset(utils.Dataset):
             if info["id"] == image_id:
                 return info;
         super(self.__class__, self).image_reference(image_id)
-
+		
     def load_png_as_nparray(self, path):
-#         print(path)
         image = Image.open(path)
+		image = image.convert('RGB')
         w, h = image.size
         return np.array(image.getdata()).reshape(h, w, 3).astype(np.uint8)
     

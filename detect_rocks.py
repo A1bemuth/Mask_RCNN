@@ -26,10 +26,10 @@ from mrcnn.model import log
 import rocksmodel
 
 def load_image(path):
-        image = Image.open(path)
-        rgbimage = image.convert('RGB')
-        w, h = rgbimage.size
-        return np.array(rgbimage.getdata()).reshape(h, w, 3).astype(np.uint8)
+    image = Image.open(path)
+    rgbimage = image.convert('RGB')
+    w, h = rgbimage.size
+    return np.array(rgbimage.getdata()).reshape(h, w, 3).astype(np.uint8)
 
 def detect_and_save(model, path):
     image = load_image(path)
